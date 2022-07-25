@@ -1,4 +1,4 @@
-![Generate playlists by Scoresaber difficulty](screenshot.jpg)
+![Generate playlists by Scoresaber difficulty](coverart/screenshot.jpg)
 This is a quick and dirty helper script to build playlists for Beat Saber using Scoresaber ranked tracks at a certain difficulty level. After you import your playlist into Beat Saber, you can use the [PlaylistManager](https://github.com/rithik-b/PlaylistManager/blob/master/Guides/GettingStarted.md) to download all of the tracks within Beat Saber.
 
 > To load playlists, store all playlists in the "Playlists" folder in your Beat Saber install. You may also create folders inside the Playlists folder to further organize your playlists. Supported formats are .json, .bplist and .blist Cover images go into the "Playlists\CoverImages" folder and the supported formats are .jpg and .png
