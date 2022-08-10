@@ -3,6 +3,6 @@ __pycache__
 .venv
 beatsaver
 customSongs
-*.bplist
+playlists/*.bplist
 *.blist
 sync.sh

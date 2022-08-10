@@ -1,2 +1,2 @@
-pyscoresaber~=1.0.7
+#pyscoresaber~=1.0.7
 click~=8.1.3

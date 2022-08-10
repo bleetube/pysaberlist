@@ -1,37 +1,22 @@
-#!/usr/bin/env python3
-import click, base64
+import click, base64, json
+from pathlib import Path    # Nice tutorial: https://realpython.com/python-pathlib/
+
+# for get_json_data()
 from urllib.request import Request, urlopen, urlretrieve, build_opener, install_opener
-from math import ceil, floor
 
-## for ss_leaderboard_by_stars()
-import json
+# for ss_leaderboard_by_stars()
 from time import sleep
+import decimal              # for rounding down
 
-## for download_beatsaver_map, and base64 coverart
-import zipfile
-from pathlib import Path
-
-beat_saber_path = "./CustomLevels"
 default_leaderboard_results = 14
-difficulty_range = 0.09 # only save songs with e.g. 7.1 to 7.19
-playlist_author = 'i5u1d0r'
-#http_headers = { 'User-Agent': 'Mozilla/5.0' }
+difficulty_range = 0.09     # star difficulties to include in a single playlist, e.g. 7.1 to 7.19
+playlist_author = "ScoreSaber"
 
 # setup urllib user-agent (required for urlretrieve)
 opener=build_opener()
 opener.addheaders=[('User-Agent','Mozilla/5.0')]
 install_opener(opener)
 
-# setup directory names to briefly describe difficulty modes
-#difficulty = {
-#    '_ExpertPlus_SoloStandard': 'ep',
-#    '_Expert_SoloStandard': 'ex',
-#    '_Hard_SoloStandard': 'hard',
-#    '_Normal_SoloStandard': 'normal',
-#    '_Easy_SoloStandard': 'easy',
-#}
-
-# 
 difficulty_level = {
     9: 'ExpertPlus',
     7: 'Expert',
@@ -43,24 +28,22 @@ difficulty_level = {
 def get_json_data( uri, params = {} ):
     """Build an http request using custom user-agent, otherwise target site will block the request with a 403 error.
     Returns a dictionary object on success."""
-
-# problem: data turns the request into a POST
+# problem with params: data turns the request into a POST
 #   http_req = Request( uri, data=params, headers=http_headers )
 #   http_req = Request( uri, headers=http_headers )
     http_req = Request( uri )
-    with urlopen( http_req ) as http_response:
-        return json.loads( http_response.read().decode() )
+    try: 
+        with urlopen( http_req ) as http_response:
+            return json.loads( http_response.read().decode() )
+    except Exception as e:
+        print(e)
 
 @click.command()
-@click.option('--stars',  type=float,
-    prompt='Star difficulty rating, e.g. 7.3 (float)',
-    help='Star difficulty rating, e.g. 7.3 (float)')
-def ss_leaderboard_by_stars( stars: float ):
-    """Request all songs of a particular start difficulty.  i.e. all 7★ songs. 
-    Note that scoresaber api only filters on rounded start ratings.
-    Another function will need to filter by point difficulty to narrow down results sufficiently.
-    ie. we will need to filter down to 7.1 to get only those songs between 7.1 and 7.2
-    Returns a dictionary object on success."""
+@click.option('--star',  type=int,
+    help='Star difficulty rating.')
+def ss_leaderboard_by_stars( star: int ):
+    """Build separate playlists for every block of n.1 for a given star level"""
+    stars = float( star )
     ss_leaderboard = {}
 
     # https://docs.scoresaber.com/#/Leaderboards/get_api_leaderboards
@@ -68,16 +51,15 @@ def ss_leaderboard_by_stars( stars: float ):
     params =  {
         "category": 3, # sort by scores
         "sort": 1, # sort ascending
-        # add 0.01 below so ceil() always raises *.0 searches to one integer above
-        "maxStar": ceil( stars + 0.01 ), 
-        "minStar": floor(stars),
+        "maxStar": star + 1, 
+        "minStar": star,
         "page": 1,
         "qualified": 0,
         "ranked": 1,
     }
-    ss_songlist = []
-    ss_song_result = 0
-    stars_exceeded = False
+    ss_playlists = {}
+    # Configure Decimal to help us truncate a float
+    decimal.getcontext().rounding = decimal.ROUND_DOWN
 
     # sanity check: never paginate more than 50 times
     while params['page'] < 50:
@@ -87,56 +69,52 @@ def ss_leaderboard_by_stars( stars: float ):
             f"category=3&maxStar={params['maxStar']}&minStar={params['minStar']}&qualified=0&ranked=0&sort=1&verified=1&page={params['page']}"
         ss_response = get_json_data( ss_request )
 
-        # process results
-
+        # save results
         for song in ss_response['leaderboards']:
-            if stars <= song['stars']  <= stars + difficulty_range:
-                print( f"{song['stars']}★ [{difficulty_level[ song['difficulty']['difficulty'] ]}] : {song['songName']} by {song['songAuthorName']}")
-                ss_song_result += 1
-                ss_songlist.append( [ ss_song_result, song ] )
-            # We are sorting results in ascending order, so end the search when the star difficulty exceeds the star difficulty range.
-            elif song['stars'] > stars + difficulty_range:
-                stars_exceeded = True
-                break
+            # maxStar is necessarily one integer higher, but we don't want songs on that difficulty.
+            if song['stars'] == params['maxStar']:
+                print( f"Skipping: {song['stars']}★ [{difficulty_level[ song['difficulty']['difficulty'] ]}] : {song['songName']} by {song['songAuthorName']}")
+                continue
 
-        # if we got less than the typical 14 results, we've reached the last page of results.
-        song_count = len( ss_response['leaderboards'] )
-        if song_count < default_leaderboard_results:
-            print( f"Got {song_count} results on page {params['page']}, ending search." )
-            break
-        elif stars_exceeded:
-            print( f"Reached a song beyond our star difficulty filter, ending search. Found {ss_song_result} matching songs!")
-            break
-        else:
-            print( f"Checked {song_count} songs on page {params['page']}, continuing to next page in 500 milliseconds." )
+            print( f"Adding: {song['stars']}★ [{difficulty_level[ song['difficulty']['difficulty'] ]}] : {song['songName']} by {song['songAuthorName']}")
 
-#       print( "INFO: Waiting 500 milliseconds before polling api again.")
+            # Group songs by rounding down to one decimal place to truncate the star difficulty.
+            playlist_group = round( decimal.Decimal( song['stars'] ), 1 )
+            playlist_title = f"{playlist_group:.1f}"
+
+            if playlist_title not in ss_playlists:
+                # initialize the playlist
+                ss_playlists[ playlist_title ] = []
+            # add song to playlist
+            ss_playlists[ playlist_title ].append( song )
+
+        # if we got less than the typical number of results, we've reached the last page of results.
+        leaderboard_results = len( ss_response['leaderboards'] )
+        if leaderboard_results < default_leaderboard_results:
+            print( f"Got {leaderboard_results} results on page {params['page']}, ending search." )
+            break
+
+        print( f"Got {leaderboard_results} songs on page {params['page']}, continuing to next page in 500 milliseconds." )
         sleep(0.5)
         params['page'] += 1
 
         # END WHILE
 
-    # TODO: make separate playlists for each difficulty for Quest users, since the songbrowser does not show difficulty
-#   map_difficulty = song['difficulty']['difficultyRaw']
-#   playlist_title = f"{stars}-{difficulty[map_difficulty]}"
-    playlist_title = f"{stars}"
-    build_playlist( ss_songlist, playlist_title )
+    # build all the playlists
+    for title, playlist in ss_playlists.items():
+        build_playlist( title, playlist )
 
-    # TODO: --download flag for Quest users
-#   for _, song in ss_songlist:
-#       download_beatsaver_map( song )
-
-
-def build_playlist(ss_songlist: list, title: str):
+def build_playlist(title: str, playlist: list):
     """Create a new playlist file for Beat Saber."""
-    # initialize a new list object
-    bplist = { 'playlistTitle': title,
+    # Initialize a new playlist.
+    # \u2605 is the unicode star emoji.
+    bplist = { 'playlistTitle': f"Ranked {title}\u2605",
         'playlistAuthor': playlist_author,
         'playlistDescription': 'Automatically generated playlist',
         'songs': [],
         'image': ""
     }
-    for _, song in ss_songlist:
+    for song in playlist:
         bplist['songs'].append({
             'key': song['id'],
             'hash': song['songHash'],
@@ -150,7 +128,7 @@ def build_playlist(ss_songlist: list, title: str):
             ]
         })
     # check for cover art and add it
-    coverart_path = Path( f"coverart/{title}.jpg" )
+    coverart_path = Path.cwd() / "coverart" / f"{title}.jpg"
     if coverart_path.is_file():
         with open( coverart_path, 'rb') as cover:
             cover_data = base64.b64encode(cover.read()).decode()
@@ -159,50 +137,17 @@ def build_playlist(ss_songlist: list, title: str):
     else:
         print( "NOTICE: Cover art not found, skipping.")
 
-
-    new_playlist = json.dumps( bplist )
-#   print( new_playlist )
-    playlist_file = f"{title}.bplist"
+    # create a subdir named "playlists" if it doesn't already exist
+    playlist_path = Path.cwd() / "playlists"
+    playlist_path.mkdir( exist_ok = True )
+    playlist_file = Path( playlist_path / f"{title}.bplist" )
     try:
         with open(playlist_file, "w") as playlist:
-            playlist.write( new_playlist )
-        print( f"INFO: Created new playlist: {playlist_file}" )
+            playlist.write( json.dumps( bplist ))
+        print( f"INFO: Created new playlist: {title}.bplist" )
     except Exception as e:
         print(f"ERROR: Failed to create playlist: {playlist_file}")
         print(e)
-
-def download_beatsaver_map( song: dict ):
-    """Download a song from beatsaver.com and expand into the configured Beat Saber installation path.
-    Inspired by novialriptide/BeatSaber-Downloader."""
-    print( f"Downloading {song['stars']}★ {song['difficulty']['difficultyRaw']} rating matched with {song['songName']} by {song['songAuthorName']}")
-    map_name = f"{song['id']} ({song['songName']} - {song['levelAuthorName']})"
-
-    # group songs by star ratings to a tenth of a percent
-    map_stars = round( song['stars'], 1 )
-
-    map_difficulty = song['difficulty']['difficultyRaw']
-
-    # FIX: this probably still fails if the difficultyRaw string isn't in the dict object
-#   if difficulty[map_difficulty]:
-    Path( f"beatsaver/{map_stars}-{difficulty[map_difficulty]}" ).mkdir(parents=True, exist_ok=True)
-    file_path = Path( f"beatsaver/{map_stars}-{difficulty[map_difficulty]}/{map_name}.zip" )
-#   else:
-#       file_path = Path( f"beatsaver/{map_stars}/{map_name}.zip" )
-
-    beatsaver_info = get_json_data( f"https://api.beatsaver.com/maps/hash/{song['songHash']}" )
-    download_url = beatsaver_info["versions"][-1]["downloadURL"] # -1 to download the latest map
-
-    if not file_path.is_file():
-        try:
-#           http_req = Request( download_url, headers=http_headers )
-#           urlretrieve( http_req, file_path )
-            urlretrieve( download_url, file_path )
-            with zipfile.ZipFile(file_path, "r") as zip:
-                zip.extractall(path=f"{beat_saber_path}/{map_name}")
-            print( f"Downloaded: {map_name}" )
-        except Exception as e:
-            print(f"Failed to download: {song['songHash']}")
-            print(e)
 
 if __name__ == '__main__':
     ss_leaderboard_by_stars()
