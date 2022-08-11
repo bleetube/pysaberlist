@@ -1,0 +1,68 @@
+#!/usr/bin/expect -f
+set send_slow {5 .25}
+set send_human {.4 1 .2 .4 1}
+#spawn /usr/local/bin/fish
+spawn /usr/local/bin/fish
+set timeout 600
+
+# change to home directory
+expect "*\$ " {
+    send "cd\r"
+}
+
+expect "*\$ " {
+    send "asciinema rec --idle-time-limit 10 --overwrite ~/pysaberlist.cast\r"
+}
+
+expect "*\$ " {
+    send -s "git clone https://github.com/bleebl33/pysaberlist"
+    send "\r"
+}
+
+expect "*\$ " {
+    send -s "cd ~/pysaberlist"
+    send "\r"
+}
+
+expect "*\$ " {
+    send -s "python3 -m venv .venv/pysaberlist"
+    send "\r"
+}
+
+expect "*\$ " {
+    send -s "source .venv/pysaberlist/bin/activate.fish"
+    send "\r"
+}
+
+expect "*\$ " {
+    send -s "python3 -m pip install -r requirements.txt"
+    send "\r"
+}
+
+expect "*\$ " {
+    sleep 1
+    send -s "python3 run.py --help"
+    send "\r"
+}
+
+#expect "*\$ " {
+#    send -s "python3 run.py --star 8"
+#    # wait briefly before pressing enter so the command can be seen before the scroll spam
+#   sleep 3; send "/r"
+#}
+
+# Ending an expect script always requires one last expect.
+expect "*\$ " {
+    puts "Last command completed.\r\r"
+    send "\r"
+}
+
+expect "*\$ " {
+    # This rarely actually prints!
+    puts "Finished running all commands."
+    exit
+}
+
+# This never happens.
+puts "End of script."
+exit
