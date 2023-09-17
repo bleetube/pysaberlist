@@ -25,6 +25,8 @@ difficulty_level = {
     1: 'Easy',
 }
 
+max_pages = 100
+
 def get_json_data( uri, params = {} ):
     """Build an http request using custom user-agent, otherwise target site will block the request with a 403 error.
     Returns a dictionary object on success."""
@@ -61,8 +63,8 @@ def ss_leaderboard_by_stars( star: int ):
     # Configure Decimal to help us truncate a float
     decimal.getcontext().rounding = decimal.ROUND_DOWN
 
-    # sanity check: never paginate more than 50 times
-    while params['page'] < 50:
+    # sanity check: never paginate more than 100 times
+    while params['page'] < max_pages:
 
         # TODO: call get_json_data using the params dict instead of doing this ugly ass string manipulation
         ss_request = "https://scoresaber.com/api/leaderboards?" + \
@@ -94,7 +96,7 @@ def ss_leaderboard_by_stars( star: int ):
             print( f"Got {leaderboard_results} results on page {params['page']}, ending search." )
             break
 
-        print( f"Got {leaderboard_results} songs on page {params['page']}, continuing to next page in 500 milliseconds." )
+        print( f"Got {leaderboard_results} songs on page {params['page']}/{max_pages}, continuing to next page in 500 milliseconds." )
         sleep(0.5)
         params['page'] += 1
 
